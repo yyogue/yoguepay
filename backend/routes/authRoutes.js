@@ -108,4 +108,48 @@ router.post("/login", async (req, res) => {
 
 
 
+router.get("/search", async (req, res) => {
+  console.log("🔍 Search request received:", req.query);
+
+  let { query } = req.query;
+  if (!query) {
+    return res.status(400).json({ error: "Search query is required" });
+  }
+
+  // ✅ Trim spaces & normalize phone format
+  query = query.trim();
+
+  // ✅ Ensure phone numbers include `+` (if missing)
+  if (/^\d+$/.test(query)) {
+    query = `+${query}`;
+  }
+
+  console.log("🔍 Searching for:", query);
+
+  try {
+    // ✅ Search by username OR phone number
+    const user = await User.findOne({
+      $or: [
+        { username: query },
+        { phone: query }
+      ],
+    });
+
+    if (!user) {
+      console.log("❌ User not found:", query);
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    console.log("✅ User found:", user);
+
+    res.status(200).json({ user });
+  } catch (error) {
+    console.error("❌ Search Error:", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
+
+
 module.exports = router;
