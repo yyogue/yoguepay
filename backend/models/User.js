@@ -10,6 +10,7 @@ const UserSchema = new mongoose.Schema({
   profilePicture: { type: String, default: "" }, //   profile picture
   username: { type: String, required: true, unique: true },
   kycStatus: { type: String, enum: ["pending", "verified", "rejected"], default: "pending" }, //  KYC status
+  balance: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
 });
 

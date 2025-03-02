@@ -56,6 +56,7 @@ router.post("/signup", upload.single("profilePicture"), async (req, res) => {
       profilePicture,
       username,
       kycStatus: "pending",
+      balance: 0,
     });
 
     await newUser.save();
