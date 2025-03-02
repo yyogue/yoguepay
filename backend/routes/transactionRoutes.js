@@ -7,6 +7,7 @@ const stripe = require("../config/stripe");
 const router = express.Router();
 
 // ✅ Send Money (Create a Transaction)
+
 router.post("/send", async (req, res) => {
   console.log("💸 Send Money Request:", req.body);
 
@@ -31,20 +32,24 @@ router.post("/send", async (req, res) => {
       return res.status(400).json({ error: "You cannot send money to yourself" });
     }
 
+    // **✅ Calculate 2% fee**
+    const fee = amount * 0.02;
+    const totalAmount = amount + fee; // Sender pays this
+
     // ❌ Prevent transactions if balance is too low
-    if (sender.balance < amount) {
+    if (sender.balance < totalAmount) {
       return res.status(400).json({ error: "Insufficient funds" });
     }
 
-    // ✅ Deduct from sender and add to receiver
-    sender.balance -= amount;
+    // ✅ Deduct total amount from sender and add amount to receiver
+    sender.balance -= totalAmount;
     receiver.balance += amount;
 
     // ✅ Save updated balances
     await sender.save();
     await receiver.save();
 
-    // ✅ Create the transaction
+    // ✅ Create the main transaction
     const transaction = new Transaction({
       senderUID,
       receiverUID: receiver.firebaseUID,
@@ -54,13 +59,25 @@ router.post("/send", async (req, res) => {
 
     await transaction.save();
 
+    // ✅ Create the fee transaction
+    const feeTransaction = new Transaction({
+      senderUID,
+      receiverUID: "SYSTEM",
+      amount: fee,
+      status: "completed",
+    });
+
+    await feeTransaction.save();
+
     console.log("✅ Transaction Completed:", transaction);
+    console.log("✅ Fee Transaction Recorded:", feeTransaction);
 
     res.status(200).json({
       message: "Transaction successful",
       senderBalance: sender.balance,
       receiverBalance: receiver.balance,
       transaction,
+      feeTransaction,
     });
   } catch (error) {
     console.error("❌ Transaction Error:", error.message);
@@ -113,41 +130,117 @@ router.post("/add-money", async (req, res) => {
       confirm: true,
       automatic_payment_methods: {
         enabled: true,
-        allow_redirects: "never", // ✅ Prevents redirect errors
+        allow_redirects: "never",
       },
     });
-    
 
     if (paymentIntent.status !== "succeeded") {
       return res.status(400).json({ error: "Payment failed" });
     }
 
+    // ✅ Calculate 2% fee
+    const fee = amount * 0.02;
+    const netAmount = amount - fee; // User receives this
+
     // ✅ Update user balance
-    user.balance += amount;
+    user.balance += netAmount;
     await user.save();
 
     // ✅ Save transaction
     const transaction = new Transaction({
       senderUID: "SYSTEM",
       receiverUID: uid,
-      amount,
+      amount: netAmount,
       status: "completed",
     });
 
     await transaction.save();
 
+    // ✅ Save fee transaction
+    const feeTransaction = new Transaction({
+      senderUID: uid,
+      receiverUID: "SYSTEM",
+      amount: fee,
+      status: "completed",
+    });
+
+    await feeTransaction.save();
+
     console.log("✅ Money Added:", transaction);
+    console.log("✅ Fee Transaction Recorded:", feeTransaction);
 
     res.status(200).json({
       message: "Money added successfully",
       balance: user.balance,
       transaction,
+      feeTransaction,
     });
   } catch (error) {
     console.error("❌ Add Money Error:", error.message);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+
+// ✅ Withdraw Money Route
+router.post("/withdraw-money", async (req, res) => {
+  console.log("💳 Withdraw Money Request:", req.body);
+
+  const { uid, amount, bankAccountId } = req.body;
+
+  if (!uid || !amount || !bankAccountId || amount <= 0) {
+    return res.status(400).json({ error: "Invalid withdrawal request" });
+  }
+
+  try {
+    // ✅ Find user
+    const user = await User.findOne({ firebaseUID: uid });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    // ❌ Prevent withdrawals if balance is too low
+    if (user.balance < amount) {
+      return res.status(400).json({ error: "Insufficient funds" });
+    }
+
+    // ✅ Create Stripe Transfer (Withdrawal)
+    const payout = await stripe.payouts.create({
+      amount: amount * 100, // Convert to cents
+      currency: "usd",
+      destination: bankAccountId, // User’s bank account ID in Stripe
+      method: "instant",
+    });
+
+    if (payout.status !== "paid") {
+      return res.status(400).json({ error: "Withdrawal failed" });
+    }
+
+    // ✅ Deduct from user balance
+    user.balance -= amount;
+    await user.save();
+
+    // ✅ Save transaction
+    const transaction = new Transaction({
+      senderUID: uid,
+      receiverUID: "BANK",
+      amount,
+      status: "completed",
+    });
+
+    await transaction.save();
+
+    console.log("✅ Money Withdrawn:", transaction);
+
+    res.status(200).json({
+      message: "Withdrawal successful",
+      balance: user.balance,
+      transaction,
+    });
+  } catch (error) {
+    console.error("❌ Withdraw Money Error:", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 
 
 
