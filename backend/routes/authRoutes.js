@@ -73,4 +73,39 @@ router.post("/signup", upload.single("profilePicture"), async (req, res) => {
 });
 
 
+router.post("/login", async (req, res) => {
+  console.log("🔥 Login request received:", req.body);
+
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required" });
+  }
+
+  try {
+    // ✅ Sign in user with Firebase Authentication
+    const userRecord = await admin.auth().getUserByEmail(email);
+    const firebaseToken = await admin.auth().createCustomToken(userRecord.uid);
+
+    // ✅ Fetch user from MongoDB
+    const user = await User.findOne({ firebaseUID: userRecord.uid });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found in database" });
+    }
+
+    console.log("✅ User authenticated:", user);
+
+    res.status(200).json({
+      message: "Login successful",
+      token: firebaseToken,
+      user,
+    });
+  } catch (error) {
+    console.error("❌ Login Error:", error.message);
+    res.status(401).json({ error: "Invalid email or password" });
+  }
+});
+
+
+
 module.exports = router;
