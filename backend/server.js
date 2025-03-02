@@ -4,6 +4,7 @@ const dotenv = require("dotenv");
 const connectDB = require("./config/database");
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
+const transactionRoutes = require("./routes/transactionRoutes");
 
 dotenv.config();
 connectDB();
@@ -15,8 +16,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // This is important!
 app.use("/api/users", userRoutes);
-
+app.use("/api/transactions", transactionRoutes);
 app.use("/api/auth", authRoutes);
+
 
 // Test Route
 app.get("/", (req, res) => {
